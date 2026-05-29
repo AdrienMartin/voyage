@@ -21,6 +21,7 @@ import {
   groupProjectedCircuitStops,
   projectCircuitCities,
 } from "../features/circuit/circuitOverlay";
+import { resolveMapClickAction } from "../features/map/mapClick";
 import { selectDisplayedCities, type MapBounds } from "../features/cities/cityDisplay";
 import { projectAdministrativeAreas } from "../features/areas/administrativeOverlay";
 import { findAdministrativeAreaAtPoint } from "../features/areas/administrativeGeometry";
@@ -147,61 +148,25 @@ export function FranceMap({
   const isZoneMode = selectionMode === "zone";
   const hasAdministrativeSelection =
     selectedDepartmentCodes.length > 0 || selectedRegionCodes.length > 0;
-  useEffect(() => {
-    citiesRef.current = cities;
-  }, [cities]);
 
-  useEffect(() => {
-    radiusInMetersRef.current = radiusInMeters;
-  }, [radiusInMeters]);
-
-  useEffect(() => {
-    departmentsRef.current = departments;
-  }, [departments]);
-
-  useEffect(() => {
-    regionsRef.current = regions;
-  }, [regions]);
-
-  useEffect(() => {
-    selectedDepartmentCodesRef.current = selectedDepartmentCodes;
-  }, [selectedDepartmentCodes]);
-
-  useEffect(() => {
-    selectedRegionCodesRef.current = selectedRegionCodes;
-  }, [selectedRegionCodes]);
-
-  useEffect(() => {
-    onToggleCircuitCityRef.current = onToggleCircuitCity;
-  }, [onToggleCircuitCity]);
+  // Keep MapLibre event handlers in sync immediately after React renders.
+  citiesRef.current = cities;
+  radiusInMetersRef.current = radiusInMeters;
+  departmentsRef.current = departments;
+  regionsRef.current = regions;
+  selectedDepartmentCodesRef.current = selectedDepartmentCodes;
+  selectedRegionCodesRef.current = selectedRegionCodes;
+  onToggleDepartmentRef.current = onToggleDepartment;
+  onRadiusChangeRef.current = onRadiusChange;
+  onSelectPointRef.current = onSelectPoint;
+  onToggleRegionRef.current = onToggleRegion;
+  onToggleCircuitCityRef.current = onToggleCircuitCity;
+  workflowStepRef.current = workflowStep;
+  selectionModeRef.current = selectionMode;
 
   useEffect(() => {
     isDraggingRadiusHandleRef.current = isDraggingRadiusHandle;
   }, [isDraggingRadiusHandle]);
-
-  useEffect(() => {
-    workflowStepRef.current = workflowStep;
-  }, [workflowStep]);
-
-  useEffect(() => {
-    selectionModeRef.current = selectionMode;
-  }, [selectionMode]);
-
-  useEffect(() => {
-    onToggleDepartmentRef.current = onToggleDepartment;
-  }, [onToggleDepartment]);
-
-  useEffect(() => {
-    onRadiusChangeRef.current = onRadiusChange;
-  }, [onRadiusChange]);
-
-  useEffect(() => {
-    onSelectPointRef.current = onSelectPoint;
-  }, [onSelectPoint]);
-
-  useEffect(() => {
-    onToggleRegionRef.current = onToggleRegion;
-  }, [onToggleRegion]);
 
   useEffect(() => {
     setHoveredAreaName(null);
@@ -614,83 +579,6 @@ export function FranceMap({
           setHoveredCityName(null);
           setHoveredAreaName(null);
         });
-        map.on("click", (event) => {
-          if (suppressNextMapClickRef.current) {
-            suppressNextMapClickRef.current = false;
-            return;
-          }
-
-          const currentWorkflowStep = workflowStepRef.current;
-          if (currentWorkflowStep === "summary") {
-            return;
-          }
-
-          if (currentWorkflowStep === "selection" && selectionModeRef.current === "region") {
-            const region = findAdministrativeAreaAtPoint(regionsRef.current, {
-              lat: event.lngLat.lat,
-              lon: event.lngLat.lng,
-            });
-            if (region !== null) {
-              onToggleRegionRef.current(region.code);
-              return;
-            }
-          }
-
-          if (currentWorkflowStep === "selection" && selectionModeRef.current === "department") {
-            const department = findAdministrativeAreaAtPoint(departmentsRef.current, {
-              lat: event.lngLat.lat,
-              lon: event.lngLat.lng,
-            });
-            if (department !== null) {
-              onToggleDepartmentRef.current(department.code);
-              return;
-            }
-          }
-
-          const clickableCityLayers = getExistingLayerIds(map, [
-            CITIES_CIRCLE_LAYER_ID,
-            CITIES_LABEL_LAYER_ID,
-          ]);
-          const cityFeature =
-            currentWorkflowStep !== "circuit"
-              ? undefined
-              :
-            clickableCityLayers.length === 0
-              ? undefined
-              : map.queryRenderedFeatures(event.point, {
-                  layers: clickableCityLayers,
-                })[0];
-
-          if (cityFeature !== undefined) {
-            const inseeCode = cityFeature.properties?.inseeCode;
-            const city = citiesRef.current.find(
-              (candidateCity) => candidateCity.inseeCode === inseeCode,
-            );
-
-            if (city !== undefined) {
-              onToggleCircuitCityRef.current(city);
-              return;
-            }
-          }
-
-          if (currentWorkflowStep !== "selection" || selectionModeRef.current !== "zone") {
-            return;
-          }
-
-          const nextPoint = {
-            lat: event.lngLat.lat,
-            lon: event.lngLat.lng,
-          };
-
-          if (!isPointInMetropolitanFrance(nextPoint)) {
-            setMapStatus("outside-france");
-            return;
-          }
-
-          setMapStatus("ready");
-          onSelectPointRef.current(nextPoint);
-        });
-
         currentMap = map;
         mapRef.current = map;
       } catch {
@@ -717,6 +605,97 @@ export function FranceMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (map === null || !isMapReady) {
+      return;
+    }
+
+    const handleMapClick = (event: maplibreglType.MapMouseEvent) => {
+      if (suppressNextMapClickRef.current) {
+        suppressNextMapClickRef.current = false;
+        return;
+      }
+
+      const currentWorkflowStep = workflowStepRef.current;
+      const currentSelectionMode = selectionModeRef.current;
+      const clickedPoint = {
+        lat: event.lngLat.lat,
+        lon: event.lngLat.lng,
+      };
+      const clickedRegion =
+        currentWorkflowStep === "selection" && currentSelectionMode === "region"
+          ? findAdministrativeAreaAtPoint(regionsRef.current, clickedPoint)
+          : null;
+      const clickedDepartment =
+        currentWorkflowStep === "selection" && currentSelectionMode === "department"
+          ? findAdministrativeAreaAtPoint(departmentsRef.current, clickedPoint)
+          : null;
+
+      const clickableCityLayers = getExistingLayerIds(map, [
+        CITIES_CIRCLE_LAYER_ID,
+        CITIES_LABEL_LAYER_ID,
+      ]);
+      const cityFeature =
+        currentWorkflowStep !== "circuit"
+          ? undefined
+          : clickableCityLayers.length === 0
+            ? undefined
+            : map.queryRenderedFeatures(event.point, {
+                layers: clickableCityLayers,
+              })[0];
+      const clickedCity =
+        cityFeature === undefined
+          ? null
+          : citiesRef.current.find(
+              (candidateCity) =>
+                candidateCity.inseeCode === cityFeature.properties?.inseeCode,
+            ) ?? null;
+
+      const action = resolveMapClickAction({
+        workflowStep: currentWorkflowStep,
+        selectionMode: currentSelectionMode,
+        clickedPoint,
+        clickedDepartmentCode: clickedDepartment?.code,
+        clickedRegionCode: clickedRegion?.code,
+        clickedCity,
+        isPointInMetropolitanFrance: isPointInMetropolitanFrance(clickedPoint),
+      });
+
+      if (action.type === "toggle-region") {
+        onToggleRegionRef.current(action.code);
+        return;
+      }
+
+      if (action.type === "toggle-department") {
+        onToggleDepartmentRef.current(action.code);
+        return;
+      }
+
+      if (action.type === "toggle-city") {
+        onToggleCircuitCityRef.current(action.city);
+        return;
+      }
+
+      if (action.type === "outside-france") {
+        setMapStatus("outside-france");
+        return;
+      }
+
+      if (action.type === "select-point") {
+        setMapStatus("ready");
+        renderSelectionCircle(map, action.point, radiusInMetersRef.current);
+        onSelectPointRef.current(action.point);
+      }
+    };
+
+    map.on("click", handleMapClick);
+
+    return () => {
+      map.off("click", handleMapClick);
+    };
+  }, [isMapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     const maplibregl = maplibreRef.current;
     if (map === null || maplibregl === null) {
       return;
@@ -725,7 +704,7 @@ export function FranceMap({
     markerRef.current?.remove();
     markerRef.current = null;
 
-    if (selectedPoint === null) {
+    if (selectedPoint === null || !isSelectionStep) {
       return;
     }
 
@@ -1034,7 +1013,7 @@ export function FranceMap({
                   event.stopPropagation();
                   onToggleCircuitCityRef.current(circuitStop);
                 }}
-                aria-label={`Ville ${circuitStop.name}, etapes ${circuitStop.orders.join(", ")}`}
+                aria-label={`Ville ${circuitStop.name}, étapes ${circuitStop.orders.join(", ")}`}
               >
                 <span className="circuit-city-marker-order">
                   {circuitStop.orders.join(" · ")}
@@ -1051,35 +1030,35 @@ export function FranceMap({
           <p className="map-overlay-title">
             {isSelectionStep && !isZoneMode && !hasAdministrativeSelection
               ? selectionMode === "department"
-                ? "Selectionnez un ou plusieurs departements"
-                : "Selectionnez une ou plusieurs regions"
+                ? "Sélectionnez un ou plusieurs départements"
+                : "Sélectionnez une ou plusieurs régions"
               : isSelectionStep && isZoneMode && selectedPoint === null
-                ? "Selectionnez une zone pour afficher les villes"
+                ? "Sélectionnez une zone pour afficher les villes"
               : isCircuitStep
                 ? "Cliquez sur les villes pour construire le circuit"
               : isSummaryStep
-                ? "Recapitulatif du circuit"
+                ? "Récapitulatif du circuit"
               : cityErrorMessage !== null
-                ? "Le chargement des villes a echoue"
+                ? "Le chargement des villes a échoué"
                 : isLoadingCities
                   ? "Recherche des villes en cours"
                   : cities.length > 0
-                    ? `${cities.length} villes trouvees`
+                    ? `${cities.length} villes trouvées`
                     : isZoneMode
-                      ? "Aucune ville trouvee dans cette zone"
-                      : "Aucune ville trouvee dans cette selection"}
+                      ? "Aucune ville trouvée dans cette zone"
+                      : "Aucune ville trouvée dans cette sélection"}
           </p>
           {(isZoneMode ? selectedPoint !== null : hasAdministrativeSelection) &&
             cityErrorMessage !== null && (
             <p className="map-overlay-body">
-              Verifiez que le backend est bien lance, puis recommencez la recherche.
+              Vérifiez que le backend est bien lancé, puis recommencez la recherche.
             </p>
           )}
           {(isZoneMode ? selectedPoint !== null : hasAdministrativeSelection) &&
             cityErrorMessage === null &&
             isLoadingCities && (
             <p className="map-overlay-body">
-              La recherche met a jour la carte avec les villes de la selection courante.
+              La recherche met à jour la carte avec les villes de la sélection courante.
             </p>
           )}
           {(isZoneMode ? selectedPoint !== null : hasAdministrativeSelection) &&
@@ -1088,7 +1067,7 @@ export function FranceMap({
             cities.length === 0 && (
               <p className="map-overlay-body">
                 {isZoneMode
-                  ? "Essayez un rayon plus large ou deplacez le point vers une zone plus dense."
+                  ? "Essayez un rayon plus large ou déplacez le point vers une zone plus dense."
                   : "Ajoutez d'autres zones ou changez de niveau administratif."}
               </p>
             )}
@@ -1097,14 +1076,14 @@ export function FranceMap({
             !isLoadingCities &&
             cities.length > 0 && (
             <p className="map-overlay-body">
-              {displayedCities.length} ville{displayedCities.length > 1 ? "s" : ""} affichee
+              {displayedCities.length} ville{displayedCities.length > 1 ? "s" : ""} affichée
               {displayedCities.length > 1 ? "s" : ""} dans la vue courante.
             </p>
           )}
           {circuitCities.length > 0 && (
             <p className="map-overlay-body">
               Circuit en cours: {circuitCities.length} ville
-              {circuitCities.length > 1 ? "s" : ""} selectionnee
+              {circuitCities.length > 1 ? "s" : ""} sélectionnée
               {circuitCities.length > 1 ? "s" : ""}.
             </p>
           )}
@@ -1115,17 +1094,17 @@ export function FranceMap({
           )}
           {isSelectionStep && hoveredAreaName !== null && (
             <p className="map-overlay-body map-overlay-body-interaction">
-              Cliquez sur <strong>{hoveredAreaName}</strong> pour la selectionner.
+              Cliquez sur <strong>{hoveredAreaName}</strong> pour la sélectionner.
             </p>
           )}
         </div>
         <div className={`map-status map-status-${mapStatus}`}>
           {mapStatus === "loading" && "Chargement de la carte..."}
-          {mapStatus === "ready" && "Carte prete."}
+          {mapStatus === "ready" && "Carte prête."}
           {mapStatus === "outside-france" &&
-            "Selection possible uniquement en France metropolitaine."}
+            "Sélection possible uniquement en France métropolitaine."}
           {mapStatus === "error" &&
-            "Le fond de carte n'a pas pu etre charge."}
+            "Le fond de carte n'a pas pu être chargé."}
         </div>
       </div>
     </section>
@@ -1259,4 +1238,23 @@ function clampRadius(
   maxRadiusInMeters: number,
 ) {
   return Math.min(maxRadiusInMeters, Math.max(minRadiusInMeters, radiusInMeters));
+}
+
+function renderSelectionCircle(
+  map: Map,
+  selectedPoint: SelectedPoint,
+  radiusInMeters: number,
+) {
+  const source = map.getSource(CIRCLE_SOURCE_ID) as GeoJSONSource | undefined;
+  if (source !== undefined) {
+    source.setData(createCircleFeature(selectedPoint, radiusInMeters));
+  }
+
+  if (map.getLayer(CIRCLE_FILL_LAYER_ID) !== undefined) {
+    map.setPaintProperty(CIRCLE_FILL_LAYER_ID, "fill-opacity", 0.12);
+  }
+
+  if (map.getLayer(CIRCLE_STROKE_LAYER_ID) !== undefined) {
+    map.setPaintProperty(CIRCLE_STROKE_LAYER_ID, "line-opacity", 0.9);
+  }
 }

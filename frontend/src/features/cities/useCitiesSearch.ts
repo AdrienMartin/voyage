@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchCities, fetchCitiesByAdministrativeAreas } from "../../lib/api";
+import { resolveCitySearchPlan } from "./citySearchPlan";
 import type { City } from "../../types/cities";
 import type { SelectedPoint } from "../../types/geo";
 import type { SelectionMode } from "../../types/selection";
@@ -31,12 +32,15 @@ export function useCitiesSearch({
   const latestRequestIdRef = useRef(0);
 
   useEffect(() => {
-    const hasAdministrativeSelection =
-      (selectionMode === "department" && selectedDepartmentCodes.length > 0) ||
-      (selectionMode === "region" && selectedRegionCodes.length > 0);
-    const shouldSearchByZone = selectionMode === "zone" && selectedPoint !== null;
+    const searchPlan = resolveCitySearchPlan({
+      selectionMode,
+      selectedPoint,
+      selectedDepartmentCodes,
+      selectedRegionCodes,
+      radiusInMeters,
+    });
 
-    if (!hasAdministrativeSelection && !shouldSearchByZone) {
+    if (searchPlan.type === "none") {
       latestRequestIdRef.current += 1;
       setCities([]);
       setIsLoadingCities(false);
@@ -53,16 +57,15 @@ export function useCitiesSearch({
     setCityErrorMessage(null);
 
     const cityRequest =
-      selectionMode === "zone" && selectedPoint !== null
+      searchPlan.type === "zone"
         ? fetchCities({
-            point: selectedPoint,
-            radiusInMeters,
+            point: searchPlan.point,
+            radiusInMeters: searchPlan.radiusInMeters,
             signal: abortController.signal,
           })
         : fetchCitiesByAdministrativeAreas({
-            departmentCodes:
-              selectionMode === "department" ? selectedDepartmentCodes : undefined,
-            regionCodes: selectionMode === "region" ? selectedRegionCodes : undefined,
+            departmentCodes: searchPlan.departmentCodes,
+            regionCodes: searchPlan.regionCodes,
             signal: abortController.signal,
           });
 

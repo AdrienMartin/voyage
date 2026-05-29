@@ -47,6 +47,16 @@ export function App() {
     isLoading: isLoadingAdministrativeAreas,
     errorMessage: administrativeAreasErrorMessage,
   } = useAdministrativeAreas();
+
+  const regionOptions = toAreaOptions(regions);
+  const departmentOptions = toAreaOptions(departments);
+  const selectedRegions = regionOptions.filter((region) =>
+    selectedRegionCodes.includes(region.code),
+  );
+  const selectedDepartments = departmentOptions.filter((department) =>
+    selectedDepartmentCodes.includes(department.code),
+  );
+
   const activeZonePoint = selectionMode === "zone" ? selectedPoint : null;
   const { cities, cityErrorMessage, isLoadingCities } = useCitiesSearch({
     selectionMode,
@@ -55,6 +65,7 @@ export function App() {
     selectedRegionCodes,
     radiusInMeters,
   });
+
   const circuitCities = circuitHistory.present;
   const circuitLegs = getCircuitLegs(circuitCities);
   const circuitTotalDistanceKm = getCircuitTotalDistanceKm(circuitCities);
@@ -72,6 +83,21 @@ export function App() {
   const canOpenCircuitStep =
     hasSelection && !isLoadingCities && cityErrorMessage === null && cities.length > 0;
   const canOpenSummaryStep = circuitCities.length > 0;
+  const selectedAreaCount = isDepartmentMode
+    ? selectedDepartments.length
+    : isRegionMode
+      ? selectedRegions.length
+      : selectedPoint === null
+        ? 0
+        : 1;
+  const currentCoverageLabel = isZoneMode
+    ? formatRadiusLabel(radiusInMeters)
+    : formatCountLabel(selectedAreaCount, isDepartmentMode ? "département" : "région");
+  const primaryStepActionLabel = isSelectionStep
+    ? "Continuer"
+    : isCircuitStep
+      ? "Voir le récapitulatif"
+      : "Parcours terminé";
 
   function resetCircuitBuilder() {
     setCircuitHistory(createCircuitHistory());
@@ -149,403 +175,336 @@ export function App() {
     });
   }
 
-  const regionOptions = toAreaOptions(regions);
-  const departmentOptions = toAreaOptions(departments);
-  const selectedRegions = regionOptions.filter((region) =>
-    selectedRegionCodes.includes(region.code),
-  );
-  const selectedDepartments = departmentOptions.filter((department) =>
-    selectedDepartmentCodes.includes(department.code),
-  );
-
   return (
     <main className="app-shell">
       <section className="layout-shell">
         <aside className="info-panel">
           <div className="panel-stack">
-            <div className="intro-block">
-              <p className="eyebrow">Voyage</p>
-              <h1>Selection geographique de villes</h1>
+            <header className="intro-block">
+              <h1>CityCircuit Pro</h1>
+              <p className="eyebrow">Planificateur logistique</p>
               <p className="body-copy">
-                Posez un point sur la carte, ajustez le rayon, puis laissez
-                l'application faire ressortir les villes les plus importantes de
-                la zone.
+                Définissez une zone, composez un circuit de villes, puis vérifiez le
+                trajet final sur une interface de planification cartographique.
               </p>
-            </div>
+            </header>
 
-            <div className="selection-card workflow-card">
-              <p className="selection-label">Parcours</p>
-              <div className="workflow-steps" aria-label="Etapes du parcours">
+            <section className="selection-card workflow-card">
+              <div className="workflow-nav" aria-label="Étapes du parcours">
                 <div className={getWorkflowStepClassName(isSelectionStep, hasSelection)}>
-                  <span className="workflow-step-index">1</span>
-                  <div>
-                    <p className="workflow-step-title">Selection</p>
-                    <p className="workflow-step-body">Choisissez la zone de travail.</p>
-                  </div>
+                  <p className="workflow-step-kicker">Étape 1</p>
+                  <p className="workflow-step-title">Sélection de zone</p>
                 </div>
                 <div className={getWorkflowStepClassName(isCircuitStep, canOpenCircuitStep)}>
-                  <span className="workflow-step-index">2</span>
-                  <div>
-                    <p className="workflow-step-title">Circuit</p>
-                    <p className="workflow-step-body">Composez le circuit dans la zone.</p>
-                  </div>
+                  <p className="workflow-step-kicker">Étape 2</p>
+                  <p className="workflow-step-title">Création du circuit</p>
                 </div>
                 <div className={getWorkflowStepClassName(isSummaryStep, canOpenSummaryStep)}>
-                  <span className="workflow-step-index">3</span>
-                  <div>
-                    <p className="workflow-step-title">Recapitulatif</p>
-                    <p className="workflow-step-body">Verifiez le trajet et les distances.</p>
-                  </div>
+                  <p className="workflow-step-kicker">Étape 3</p>
+                  <p className="workflow-step-title">Récapitulatif</p>
                 </div>
               </div>
-              <div className="workflow-actions">
+            </section>
+
+            {isSelectionStep && (
+              <section className={`selection-card ${!isSelectionStep ? "selection-card-disabled" : ""}`}>
+                <div className="selection-mode-header">
+                  <p className="selection-label">Mode de sélection</p>
+                  <div className="selection-mode-buttons">
+                    <button
+                      type="button"
+                      className={getSelectionModeButtonClassName(isZoneMode)}
+                      disabled={!isSelectionStep}
+                      onClick={() => {
+                        handleSelectionModeChange("zone");
+                      }}
+                    >
+                      Cercle
+                    </button>
+                    <button
+                      type="button"
+                      className={getSelectionModeButtonClassName(isDepartmentMode)}
+                      disabled={!isSelectionStep}
+                      onClick={() => {
+                        handleSelectionModeChange("department");
+                      }}
+                    >
+                      Départements
+                    </button>
+                    <button
+                      type="button"
+                      className={getSelectionModeButtonClassName(isRegionMode)}
+                      disabled={!isSelectionStep}
+                      onClick={() => {
+                        handleSelectionModeChange("region");
+                      }}
+                    >
+                      Régions
+                    </button>
+                  </div>
+                </div>
+
+                {isZoneMode ? (
+                  <section className="parameter-card">
+                    <div className="radius-header">
+                      <p className="parameter-title">Rayon</p>
+                      <p className="radius-value">{formatRadiusLabel(radiusInMeters)}</p>
+                    </div>
+                    <input
+                      className="radius-slider"
+                      type="range"
+                      min={MIN_RADIUS_IN_METERS}
+                      max={MAX_RADIUS_IN_METERS}
+                      step={RADIUS_STEP_IN_METERS}
+                      value={radiusInMeters}
+                      disabled={!isSelectionStep}
+                      onChange={(event) => {
+                        handleRadiusChange(Number(event.target.value));
+                      }}
+                    />
+                    <div className="range-ticks" aria-hidden="true">
+                      <span>5 km</span>
+                      <span>300 km</span>
+                    </div>
+                  </section>
+                ) : (
+                  <>
+                    <label className="selection-field">
+                      <span className="selection-field-label">
+                        {isDepartmentMode
+                          ? "Choisir un ou plusieurs départements"
+                          : "Choisir une ou plusieurs régions"}
+                      </span>
+                      <select
+                        className="selection-select selection-select-multiple"
+                        multiple
+                        size={isDepartmentMode ? 10 : 8}
+                        disabled={!isSelectionStep}
+                        value={
+                          isDepartmentMode
+                            ? selectedDepartmentCodes
+                            : selectedRegionCodes
+                        }
+                        onChange={(event) => {
+                          const nextSelectedCodes = [...event.target.selectedOptions].map(
+                            (option) => option.value,
+                          );
+
+                          if (isDepartmentMode) {
+                            setSelectedDepartmentCodes(nextSelectedCodes);
+                            resetCircuitBuilder();
+                          } else {
+                            setSelectedRegionCodes(nextSelectedCodes);
+                            resetCircuitBuilder();
+                          }
+                        }}
+                      >
+                        {(isDepartmentMode ? departmentOptions : regionOptions).map((area) => (
+                          <option key={area.code} value={area.code}>
+                            {area.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="radius-help">
+                      {isSelectionStep
+                        ? "Cliquez sur la carte pour ajouter ou retirer une zone, ou utilisez cette liste multiple."
+                        : "Revenez à l'étape 1 pour modifier la zone sélectionnée."}
+                    </p>
+                    {isLoadingAdministrativeAreas && (
+                      <p className="selection-empty">Chargement des contours administratifs...</p>
+                    )}
+                    {administrativeAreasErrorMessage !== null && (
+                      <p className="cities-error">{administrativeAreasErrorMessage}</p>
+                    )}
+                    {isDepartmentMode && (
+                      <>
+                        <p className="cities-highlight">
+                          {formatCountLabel(selectedDepartments.length, "département")} sélectionné
+                          {selectedDepartments.length > 1 ? "s" : ""}.
+                        </p>
+                        {selectedDepartments.length > 0 && (
+                          <div className="selection-chip-list">
+                            {selectedDepartments.map((department) => (
+                              <button
+                                key={department.code}
+                                type="button"
+                                className="selection-chip"
+                                disabled={!isSelectionStep}
+                                onClick={() => {
+                                  setSelectedDepartmentCodes((currentCodes) =>
+                                    currentCodes.filter((code) => code !== department.code),
+                                  );
+                                  resetCircuitBuilder();
+                                }}
+                              >
+                                {department.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {isRegionMode && (
+                      <>
+                        <p className="cities-highlight">
+                          {formatCountLabel(selectedRegions.length, "région")} sélectionnée
+                          {selectedRegions.length > 1 ? "s" : ""}.
+                        </p>
+                        {selectedRegions.length > 0 && (
+                          <div className="selection-chip-list">
+                            {selectedRegions.map((region) => (
+                              <button
+                                key={region.code}
+                                type="button"
+                                className="selection-chip"
+                                disabled={!isSelectionStep}
+                                onClick={() => {
+                                  setSelectedRegionCodes((currentCodes) =>
+                                    currentCodes.filter((code) => code !== region.code),
+                                  );
+                                  resetCircuitBuilder();
+                                }}
+                              >
+                                {region.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </section>
+            )}
+
+            {!isSelectionStep && (
+              <section className="selection-card cities-card">
+                <div className="cities-header">
+                  <p className="selection-label section-title-tight">
+                    {isSummaryStep ? "Étape 3 - récapitulatif" : "Étape 2 - circuit"}
+                  </p>
+                  <span className="cities-summary-badge">
+                    {formatCountLabel(circuitCities.length, "ville")}
+                  </span>
+                </div>
+                {isCircuitStep && (
+                  <div className="circuit-actions">
+                    <button
+                      type="button"
+                      className="circuit-action-button"
+                      onClick={() => {
+                        setCircuitHistory((currentCircuitHistory) =>
+                          undoCircuitHistory(currentCircuitHistory),
+                        );
+                      }}
+                      disabled={!isCircuitStep || circuitHistory.past.length === 0}
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      className="circuit-action-button"
+                      onClick={() => {
+                        setCircuitHistory((currentCircuitHistory) =>
+                          redoCircuitHistory(currentCircuitHistory),
+                        );
+                      }}
+                      disabled={!isCircuitStep || circuitHistory.future.length === 0}
+                    >
+                      Refaire
+                    </button>
+                    <button
+                      type="button"
+                      className="circuit-action-button circuit-action-button-danger"
+                      onClick={() => {
+                        setCircuitHistory((currentCircuitHistory) =>
+                          resetCircuitHistory(currentCircuitHistory),
+                        );
+                      }}
+                      disabled={circuitCities.length === 0}
+                    >
+                      Réinitialiser
+                    </button>
+                  </div>
+                )}
+                <p className="circuit-total-distance">
+                  Total: <strong>{formatCircuitDistance(circuitTotalDistanceKm)}</strong>
+                </p>
+                {isCircuitStep && (
+                  <p className="cities-highlight">
+                    Cliquez sur une ville de la carte pour l'ajouter au circuit.
+                  </p>
+                )}
+                {circuitLegs.length > 0 && (
+                  <div className="circuit-table-wrap">
+                    <table className="circuit-table">
+                      <thead>
+                        <tr>
+                          <th>Étape</th>
+                          <th>Ville</th>
+                          <th>Depuis la précédente</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {circuitLegs.map((leg) => (
+                          <tr key={`${leg.order}-${leg.city.inseeCode}`}>
+                            <td>{leg.order}</td>
+                            <td>{leg.city.name}</td>
+                            <td>{formatCircuitDistance(leg.distanceFromPreviousKm)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {isSelectionStep && (
+              <section className="selection-card coverage-card">
+                <div className="coverage-card-header">
+                  <div>
+                    <p className="coverage-card-kicker">Couverture actuelle</p>
+                    <p className="coverage-card-value">{currentCoverageLabel}</p>
+                  </div>
+                  <div className="coverage-card-icon" aria-hidden="true">
+                    +
+                  </div>
+                </div>
+              </section>
+            )}
+          </div>
+
+          <footer className="sidebar-footer">
+            <button
+              type="button"
+              className="sidebar-primary-action"
+              onClick={handleNextStep}
+              disabled={
+                (isSelectionStep && !canOpenCircuitStep) ||
+                (isCircuitStep && !canOpenSummaryStep) ||
+                isSummaryStep
+              }
+            >
+              <span>{primaryStepActionLabel}</span>
+              <span className="sidebar-primary-action-arrow" aria-hidden="true">
+                →
+              </span>
+            </button>
+            {!isSelectionStep && (
+              <div className="sidebar-footer-links">
                 <button
                   type="button"
-                  className="workflow-action-button"
+                  className="sidebar-footer-link"
                   onClick={handlePreviousStep}
                   disabled={isSelectionStep}
                 >
-                  Etape precedente
-                </button>
-                <button
-                  type="button"
-                  className="workflow-action-button workflow-action-button-primary"
-                  onClick={handleNextStep}
-                  disabled={
-                    (isSelectionStep && !canOpenCircuitStep) ||
-                    (isCircuitStep && !canOpenSummaryStep) ||
-                    isSummaryStep
-                  }
-                >
-                  {isSelectionStep
-                    ? "Passer au circuit"
-                    : isCircuitStep
-                      ? "Voir le recapitulatif"
-                      : "Parcours termine"}
+                  Étape précédente
                 </button>
               </div>
-            </div>
-
-            <div className="selection-card spotlight-card">
-              <div className="status-pill-row">
-                <span className="status-pill">
-                  {isSelectionStep
-                    ? "Etape 1 - selection"
-                    : isCircuitStep
-                      ? "Etape 2 - circuit"
-                      : "Etape 3 - recapitulatif"}
-                </span>
-                <span className="status-pill">
-                  {isZoneMode
-                    ? selectedPoint === null
-                      ? "En attente de selection"
-                      : "Zone active"
-                    : isDepartmentMode
-                      ? "Selection par departements"
-                      : "Selection par regions"}
-                </span>
-              </div>
-              <div className="metrics-grid">
-                <article className="metric-card">
-                  <p className="metric-label">{isZoneMode ? "Point" : "Selection"}</p>
-                  {!isZoneMode ? (
-                    <p className="metric-empty">
-                      {hasAdministrativeSelection
-                        ? "Zones en cours"
-                        : "Aucune zone choisie"}
-                    </p>
-                  ) : selectedPoint === null ? (
-                    <p className="metric-empty">Aucun point</p>
-                  ) : (
-                    <>
-                      <p className="metric-value">{selectedPoint.lat.toFixed(3)}</p>
-                      <p className="metric-subvalue">{selectedPoint.lon.toFixed(3)}</p>
-                    </>
-                  )}
-                </article>
-                <article className="metric-card">
-                  <p className="metric-label">Rayon</p>
-                  <p className="metric-value">
-                    {isZoneMode ? formatRadiusLabel(radiusInMeters) : "-"}
-                  </p>
-                  <p className="metric-subvalue">
-                    {isZoneMode ? "zone de recherche" : "non utilise"}
-                  </p>
-                </article>
-                <article className="metric-card">
-                  <p className="metric-label">Villes</p>
-                  <p className="metric-value">{cities.length}</p>
-                  <p className="metric-subvalue">trouvees</p>
-                </article>
-              </div>
-            </div>
-
-            <div className={`selection-card ${!isSelectionStep ? "selection-card-disabled" : ""}`}>
-              <div className="selection-mode-header">
-                <p className="selection-label">Etape 1 - zone de travail</p>
-                <div className="selection-mode-buttons">
-                  <button
-                    type="button"
-                    className={getSelectionModeButtonClassName(isZoneMode)}
-                    disabled={!isSelectionStep}
-                    onClick={() => {
-                      handleSelectionModeChange("zone");
-                    }}
-                  >
-                    Zone
-                  </button>
-                  <button
-                    type="button"
-                    className={getSelectionModeButtonClassName(isDepartmentMode)}
-                    disabled={!isSelectionStep}
-                    onClick={() => {
-                      handleSelectionModeChange("department");
-                    }}
-                  >
-                    Departements
-                  </button>
-                  <button
-                    type="button"
-                    className={getSelectionModeButtonClassName(isRegionMode)}
-                    disabled={!isSelectionStep}
-                    onClick={() => {
-                      handleSelectionModeChange("region");
-                    }}
-                  >
-                    Regions
-                  </button>
-                </div>
-              </div>
-              {isZoneMode ? (
-                <>
-                  <div className="radius-header">
-                    <p className="selection-label">Reglage du rayon</p>
-                    <p className="radius-value">{formatRadiusLabel(radiusInMeters)}</p>
-                  </div>
-                  <input
-                    className="radius-slider"
-                    type="range"
-                    min={MIN_RADIUS_IN_METERS}
-                    max={MAX_RADIUS_IN_METERS}
-                    step={RADIUS_STEP_IN_METERS}
-                    value={radiusInMeters}
-                    disabled={!isSelectionStep}
-                    onChange={(event) => {
-                      handleRadiusChange(Number(event.target.value));
-                    }}
-                  />
-                  <div className="range-ticks" aria-hidden="true">
-                    <span>5 km</span>
-                    <span>150 km</span>
-                    <span>300 km</span>
-                  </div>
-                  <p className="radius-help">
-                    Le cercle pilote directement la recherche backend et l'affichage
-                    cartographique.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <label className="selection-field">
-                    <span className="selection-field-label">
-                      {isDepartmentMode
-                        ? "Choisir un ou plusieurs departements"
-                        : "Choisir une ou plusieurs regions"}
-                    </span>
-                    <select
-                      className="selection-select selection-select-multiple"
-                      multiple
-                      size={isDepartmentMode ? 10 : 8}
-                      disabled={!isSelectionStep}
-                      value={
-                        isDepartmentMode
-                          ? selectedDepartmentCodes
-                          : selectedRegionCodes
-                      }
-                      onChange={(event) => {
-                        const nextSelectedCodes = [...event.target.selectedOptions].map(
-                          (option) => option.value,
-                        );
-                        if (isDepartmentMode) {
-                          setSelectedDepartmentCodes(nextSelectedCodes);
-                          resetCircuitBuilder();
-                        } else {
-                          setSelectedRegionCodes(nextSelectedCodes);
-                          resetCircuitBuilder();
-                        }
-                      }}
-                    >
-                      {(isDepartmentMode
-                        ? departmentOptions
-                        : regionOptions
-                      ).map((area) => (
-                        <option key={area.code} value={area.code}>
-                          {area.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <p className="radius-help">
-                    {isSelectionStep
-                      ? "Cliquez directement sur la carte pour ajouter ou retirer une zone, ou utilisez cette liste multiple."
-                      : "Revenez a l'etape 1 pour modifier la zone selectionnee."}
-                  </p>
-                  {isLoadingAdministrativeAreas && (
-                    <p className="selection-empty">Chargement des contours administratifs...</p>
-                  )}
-                  {administrativeAreasErrorMessage !== null && (
-                    <p className="cities-error">{administrativeAreasErrorMessage}</p>
-                  )}
-                  {isDepartmentMode && (
-                    <>
-                      <p className="cities-highlight">
-                        {formatCountLabel(selectedDepartments.length, "departement")} selectionne
-                        {selectedDepartments.length > 1 ? "s" : ""}.
-                      </p>
-                      {selectedDepartments.length > 0 && (
-                        <div className="selection-chip-list">
-                          {selectedDepartments.map((department) => (
-                            <button
-                              key={department.code}
-                              type="button"
-                              className="selection-chip"
-                              disabled={!isSelectionStep}
-                              onClick={() => {
-                                setSelectedDepartmentCodes((currentCodes) =>
-                                  currentCodes.filter((code) => code !== department.code),
-                                );
-                                resetCircuitBuilder();
-                              }}
-                            >
-                              {department.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {isRegionMode && (
-                    <>
-                      <p className="cities-highlight">
-                        {formatCountLabel(selectedRegions.length, "region")} selectionnee
-                        {selectedRegions.length > 1 ? "s" : ""}.
-                      </p>
-                      {selectedRegions.length > 0 && (
-                        <div className="selection-chip-list">
-                          {selectedRegions.map((region) => (
-                            <button
-                              key={region.code}
-                              type="button"
-                              className="selection-chip"
-                              disabled={!isSelectionStep}
-                              onClick={() => {
-                                setSelectedRegionCodes((currentCodes) =>
-                                  currentCodes.filter((code) => code !== region.code),
-                                );
-                                resetCircuitBuilder();
-                              }}
-                            >
-                              {region.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="selection-card cities-card">
-              <div className="cities-header">
-                <p className="selection-label">
-                  {isSummaryStep ? "Etape 3 - recapitulatif" : "Etape 2 - circuit"}
-                </p>
-              </div>
-              {!isCircuitStep && !isSummaryStep && (
-                <p className="cities-summary">
-                  Passez a l'etape 2 pour commencer a selectionner les villes du circuit.
-                </p>
-              )}
-              <div className="circuit-actions">
-                <button
-                  type="button"
-                  className="circuit-action-button"
-                  onClick={() => {
-                    setCircuitHistory((currentCircuitHistory) =>
-                      undoCircuitHistory(currentCircuitHistory),
-                    );
-                  }}
-                  disabled={!isCircuitStep || circuitHistory.past.length === 0}
-                >
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  className="circuit-action-button"
-                  onClick={() => {
-                    setCircuitHistory((currentCircuitHistory) =>
-                      redoCircuitHistory(currentCircuitHistory),
-                    );
-                  }}
-                  disabled={!isCircuitStep || circuitHistory.future.length === 0}
-                >
-                  Refaire
-                </button>
-                <button
-                  type="button"
-                  className="circuit-action-button circuit-action-button-danger"
-                  onClick={() => {
-                    setCircuitHistory((currentCircuitHistory) =>
-                      resetCircuitHistory(currentCircuitHistory),
-                    );
-                  }}
-                  disabled={(!isCircuitStep && !isSummaryStep) || circuitCities.length === 0}
-                >
-                  Reinitialiser
-                </button>
-              </div>
-              <p className="cities-summary">
-                {formatCountLabel(circuitCities.length, "ville")} selectionnee
-                {circuitCities.length > 1 ? "s" : ""}.
-              </p>
-              <p className="circuit-total-distance">
-                Total: <strong>{formatCircuitDistance(circuitTotalDistanceKm)}</strong>
-              </p>
-              {isCircuitStep && (
-                <p className="cities-highlight">
-                  Cliquez sur une ville de la carte pour l'ajouter au circuit.
-                </p>
-              )}
-              {isCircuitStep && circuitCities.length > 0 && (
-                <p className="cities-highlight">
-                  Vous pouvez repasser par une meme ville plusieurs fois.
-                </p>
-              )}
-              {circuitLegs.length > 0 && (
-                <div className="circuit-table-wrap">
-                  <table className="circuit-table">
-                    <thead>
-                      <tr>
-                        <th>Etape</th>
-                        <th>Ville</th>
-                        <th>Depuis la precedente</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {circuitLegs.map((leg) => (
-                        <tr key={`${leg.order}-${leg.city.inseeCode}`}>
-                          <td>{leg.order}</td>
-                          <td>{leg.city.name}</td>
-                          <td>{formatCircuitDistance(leg.distanceFromPreviousKm)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
+            )}
+          </footer>
         </aside>
         <Suspense fallback={<MapPanelFallback />}>
           <FranceMap
