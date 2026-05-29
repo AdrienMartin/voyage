@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.vite/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+.tsbuildinfo
+
+# Build outputs
+frontend/dist/
+backend/dist/
+
+# Test caches
+.vitest/
+
+# Local data and temp files
+tmp_*.csv
+tmp_*.json
+tmp_*.txt
