@@ -1,8 +1,9 @@
 import type { CitySearchResponse } from "../types/cities";
 import type { SelectedPoint } from "../types/geo";
 import type { VisitPlaceSearchResponse } from "../types/places";
+import { resolveApiBaseUrl } from "./apiBase";
 
-const API_BASE_URL = "http://localhost:3000";
+const API_BASE_URL = resolveApiBaseUrl();
 const FULL_CITY_FETCH_LIMIT = "40000";
 
 export async function fetchCities(params: {
