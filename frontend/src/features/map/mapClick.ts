@@ -32,10 +32,6 @@ export function resolveMapClickAction({
   clickedCity = null,
   isPointInMetropolitanFrance,
 }: ResolveMapClickActionInput): MapClickAction {
-  if (workflowStep === "summary") {
-    return { type: "none" };
-  }
-
   if (workflowStep === "selection" && selectionMode === "region" && clickedRegionCode !== null) {
     return {
       type: "toggle-region",

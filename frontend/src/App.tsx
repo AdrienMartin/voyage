@@ -13,6 +13,11 @@ import {
   resetCircuitHistory,
   undoCircuitHistory,
 } from "./features/circuit/circuit";
+import {
+  canShowCircuitPlaces,
+  DEFAULT_CIRCUIT_PLACES_RADIUS_IN_METERS,
+} from "./features/places/placesConfig";
+import { useCircuitPlacesSearch } from "./features/places/useCircuitPlacesSearch";
 import { formatRadiusLabel } from "./lib/geo";
 import type { City } from "./types/cities";
 import type { SelectedPoint } from "./types/geo";
@@ -40,7 +45,11 @@ export function App() {
   const [selectedRegionCodes, setSelectedRegionCodes] = useState<string[]>([]);
   const [radiusInMeters, setRadiusInMeters] = useState(DEFAULT_RADIUS_IN_METERS);
   const [visibleCitiesOnMapCount, setVisibleCitiesOnMapCount] = useState(0);
+  const [visibleVisitPlacesOnMapCount, setVisibleVisitPlacesOnMapCount] = useState(0);
   const [circuitHistory, setCircuitHistory] = useState(createCircuitHistory);
+  const [circuitPlacesRadiusInMeters] = useState(
+    DEFAULT_CIRCUIT_PLACES_RADIUS_IN_METERS,
+  );
   const {
     departments,
     regions,
@@ -67,11 +76,21 @@ export function App() {
   });
 
   const circuitCities = circuitHistory.present;
+  const {
+    visitPlaces: circuitPlaces,
+    isLoadingVisitPlaces,
+    visitPlacesErrorMessage,
+  } = useCircuitPlacesSearch({
+    isEnabled:
+      workflowStep === "places" && canShowCircuitPlaces(circuitCities.length),
+    circuitCities,
+    proximityRadiusMeters: circuitPlacesRadiusInMeters,
+  });
   const circuitLegs = getCircuitLegs(circuitCities);
   const circuitTotalDistanceKm = getCircuitTotalDistanceKm(circuitCities);
   const isSelectionStep = workflowStep === "selection";
   const isCircuitStep = workflowStep === "circuit";
-  const isSummaryStep = workflowStep === "summary";
+  const isPlacesStep = workflowStep === "places";
   const isZoneMode = selectionMode === "zone";
   const isDepartmentMode = selectionMode === "department";
   const isRegionMode = selectionMode === "region";
@@ -82,7 +101,9 @@ export function App() {
     (!isZoneMode && hasAdministrativeSelection);
   const canOpenCircuitStep =
     hasSelection && !isLoadingCities && cityErrorMessage === null && cities.length > 0;
-  const canOpenSummaryStep = circuitCities.length > 0;
+  const canOpenPlacesStep = circuitCities.length > 0;
+  const canLoadCircuitPlaces = canShowCircuitPlaces(circuitCities.length);
+  const shouldShowCircuitPlaces = isPlacesStep && canLoadCircuitPlaces;
   const selectedAreaCount = isDepartmentMode
     ? selectedDepartments.length
     : isRegionMode
@@ -92,12 +113,12 @@ export function App() {
         : 1;
   const currentCoverageLabel = isZoneMode
     ? formatRadiusLabel(radiusInMeters)
-    : formatCountLabel(selectedAreaCount, isDepartmentMode ? "département" : "région");
+    : formatCountLabel(selectedAreaCount, isDepartmentMode ? "departement" : "region");
   const primaryStepActionLabel = isSelectionStep
     ? "Continuer"
     : isCircuitStep
-      ? "Voir le récapitulatif"
-      : "Parcours terminé";
+      ? "Voir les lieux"
+      : "Parcours termine";
 
   function resetCircuitBuilder() {
     setCircuitHistory(createCircuitHistory());
@@ -149,7 +170,7 @@ export function App() {
 
   function handlePreviousStep() {
     setWorkflowStep((currentStep) => {
-      if (currentStep === "summary") {
+      if (currentStep === "places") {
         return "circuit";
       }
 
@@ -167,8 +188,8 @@ export function App() {
         return "circuit";
       }
 
-      if (currentStep === "circuit" && canOpenSummaryStep) {
-        return "summary";
+      if (currentStep === "circuit" && canOpenPlacesStep) {
+        return "places";
       }
 
       return currentStep;
@@ -184,24 +205,24 @@ export function App() {
               <h1>CityCircuit Pro</h1>
               <p className="eyebrow">Planificateur logistique</p>
               <p className="body-copy">
-                Définissez une zone, composez un circuit de villes, puis vérifiez le
-                trajet final sur une interface de planification cartographique.
+                Definissez une zone, composez un circuit de villes, explorez les lieux
+                a visiter a proximite, puis verifiez le trajet final.
               </p>
             </header>
 
             <section className="selection-card workflow-card">
-              <div className="workflow-nav" aria-label="Étapes du parcours">
+              <div className="workflow-nav" aria-label="Etapes du parcours">
                 <div className={getWorkflowStepClassName(isSelectionStep, hasSelection)}>
-                  <p className="workflow-step-kicker">Étape 1</p>
-                  <p className="workflow-step-title">Sélection de zone</p>
+                  <p className="workflow-step-kicker">Etape 1</p>
+                  <p className="workflow-step-title">Selection de zone</p>
                 </div>
                 <div className={getWorkflowStepClassName(isCircuitStep, canOpenCircuitStep)}>
-                  <p className="workflow-step-kicker">Étape 2</p>
-                  <p className="workflow-step-title">Création du circuit</p>
+                  <p className="workflow-step-kicker">Etape 2</p>
+                  <p className="workflow-step-title">Creation du circuit</p>
                 </div>
-                <div className={getWorkflowStepClassName(isSummaryStep, canOpenSummaryStep)}>
-                  <p className="workflow-step-kicker">Étape 3</p>
-                  <p className="workflow-step-title">Récapitulatif</p>
+                <div className={getWorkflowStepClassName(isPlacesStep, canOpenPlacesStep)}>
+                  <p className="workflow-step-kicker">Etape 3</p>
+                  <p className="workflow-step-title">Lieux a visiter</p>
                 </div>
               </div>
             </section>
@@ -209,7 +230,7 @@ export function App() {
             {isSelectionStep && (
               <section className={`selection-card ${!isSelectionStep ? "selection-card-disabled" : ""}`}>
                 <div className="selection-mode-header">
-                  <p className="selection-label">Mode de sélection</p>
+                  <p className="selection-label">Mode de selection</p>
                   <div className="selection-mode-buttons">
                     <button
                       type="button"
@@ -229,7 +250,7 @@ export function App() {
                         handleSelectionModeChange("department");
                       }}
                     >
-                      Départements
+                      Departements
                     </button>
                     <button
                       type="button"
@@ -239,7 +260,7 @@ export function App() {
                         handleSelectionModeChange("region");
                       }}
                     >
-                      Régions
+                      Regions
                     </button>
                   </div>
                 </div>
@@ -272,8 +293,8 @@ export function App() {
                     <label className="selection-field">
                       <span className="selection-field-label">
                         {isDepartmentMode
-                          ? "Choisir un ou plusieurs départements"
-                          : "Choisir une ou plusieurs régions"}
+                          ? "Choisir un ou plusieurs departements"
+                          : "Choisir une ou plusieurs regions"}
                       </span>
                       <select
                         className="selection-select selection-select-multiple"
@@ -307,9 +328,8 @@ export function App() {
                       </select>
                     </label>
                     <p className="radius-help">
-                      {isSelectionStep
-                        ? "Cliquez sur la carte pour ajouter ou retirer une zone, ou utilisez cette liste multiple."
-                        : "Revenez à l'étape 1 pour modifier la zone sélectionnée."}
+                      Cliquez sur la carte pour ajouter ou retirer une zone, ou utilisez
+                      cette liste multiple.
                     </p>
                     {isLoadingAdministrativeAreas && (
                       <p className="selection-empty">Chargement des contours administratifs...</p>
@@ -320,7 +340,7 @@ export function App() {
                     {isDepartmentMode && (
                       <>
                         <p className="cities-highlight">
-                          {formatCountLabel(selectedDepartments.length, "département")} sélectionné
+                          {formatCountLabel(selectedDepartments.length, "departement")} selectionne
                           {selectedDepartments.length > 1 ? "s" : ""}.
                         </p>
                         {selectedDepartments.length > 0 && (
@@ -333,7 +353,7 @@ export function App() {
                                 disabled={!isSelectionStep}
                                 onClick={() => {
                                   setSelectedDepartmentCodes((currentCodes) =>
-                                    currentCodes.filter((code) => code !== department.code),
+                                    currentCodes.filter((currentCode) => currentCode !== department.code),
                                   );
                                   resetCircuitBuilder();
                                 }}
@@ -348,7 +368,7 @@ export function App() {
                     {isRegionMode && (
                       <>
                         <p className="cities-highlight">
-                          {formatCountLabel(selectedRegions.length, "région")} sélectionnée
+                          {formatCountLabel(selectedRegions.length, "region")} selectionnee
                           {selectedRegions.length > 1 ? "s" : ""}.
                         </p>
                         {selectedRegions.length > 0 && (
@@ -361,7 +381,7 @@ export function App() {
                                 disabled={!isSelectionStep}
                                 onClick={() => {
                                   setSelectedRegionCodes((currentCodes) =>
-                                    currentCodes.filter((code) => code !== region.code),
+                                    currentCodes.filter((currentCode) => currentCode !== region.code),
                                   );
                                   resetCircuitBuilder();
                                 }}
@@ -382,81 +402,159 @@ export function App() {
               <section className="selection-card cities-card">
                 <div className="cities-header">
                   <p className="selection-label section-title-tight">
-                    {isSummaryStep ? "Étape 3 - récapitulatif" : "Étape 2 - circuit"}
+                    {isCircuitStep
+                      ? "Etape 2 - circuit"
+                      : "Etape 3 - lieux a visiter"}
                   </p>
                   <span className="cities-summary-badge">
-                    {formatCountLabel(circuitCities.length, "ville")}
+                    {isPlacesStep
+                      ? formatCountLabel(circuitPlaces.length, "lieu")
+                      : formatCountLabel(circuitCities.length, "ville")}
                   </span>
                 </div>
+
                 {isCircuitStep && (
-                  <div className="circuit-actions">
-                    <button
-                      type="button"
-                      className="circuit-action-button"
-                      onClick={() => {
-                        setCircuitHistory((currentCircuitHistory) =>
-                          undoCircuitHistory(currentCircuitHistory),
-                        );
-                      }}
-                      disabled={!isCircuitStep || circuitHistory.past.length === 0}
-                    >
-                      Annuler
-                    </button>
-                    <button
-                      type="button"
-                      className="circuit-action-button"
-                      onClick={() => {
-                        setCircuitHistory((currentCircuitHistory) =>
-                          redoCircuitHistory(currentCircuitHistory),
-                        );
-                      }}
-                      disabled={!isCircuitStep || circuitHistory.future.length === 0}
-                    >
-                      Refaire
-                    </button>
-                    <button
-                      type="button"
-                      className="circuit-action-button circuit-action-button-danger"
-                      onClick={() => {
-                        setCircuitHistory((currentCircuitHistory) =>
-                          resetCircuitHistory(currentCircuitHistory),
-                        );
-                      }}
-                      disabled={circuitCities.length === 0}
-                    >
-                      Réinitialiser
-                    </button>
-                  </div>
+                  <>
+                    <div className="circuit-actions">
+                      <button
+                        type="button"
+                        className="circuit-action-button"
+                        onClick={() => {
+                          setCircuitHistory((currentCircuitHistory) =>
+                            undoCircuitHistory(currentCircuitHistory),
+                          );
+                        }}
+                        disabled={circuitHistory.past.length === 0}
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="button"
+                        className="circuit-action-button"
+                        onClick={() => {
+                          setCircuitHistory((currentCircuitHistory) =>
+                            redoCircuitHistory(currentCircuitHistory),
+                          );
+                        }}
+                        disabled={circuitHistory.future.length === 0}
+                      >
+                        Refaire
+                      </button>
+                      <button
+                        type="button"
+                        className="circuit-action-button circuit-action-button-danger"
+                        onClick={() => {
+                          setCircuitHistory((currentCircuitHistory) =>
+                            resetCircuitHistory(currentCircuitHistory),
+                          );
+                        }}
+                        disabled={circuitCities.length === 0}
+                      >
+                        Reinitialiser
+                      </button>
+                    </div>
+                    <p className="circuit-total-distance">
+                      Total: <strong>{formatCircuitDistance(circuitTotalDistanceKm)}</strong>
+                    </p>
+                    <p className="cities-highlight">
+                      Cliquez sur une ville de la carte pour l'ajouter au circuit.
+                    </p>
+                  </>
                 )}
-                <p className="circuit-total-distance">
-                  Total: <strong>{formatCircuitDistance(circuitTotalDistanceKm)}</strong>
-                </p>
-                {isCircuitStep && (
-                  <p className="cities-highlight">
-                    Cliquez sur une ville de la carte pour l'ajouter au circuit.
-                  </p>
-                )}
-                {circuitLegs.length > 0 && (
-                  <div className="circuit-table-wrap">
-                    <table className="circuit-table">
-                      <thead>
-                        <tr>
-                          <th>Étape</th>
-                          <th>Ville</th>
-                          <th>Depuis la précédente</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {circuitLegs.map((leg) => (
-                          <tr key={`${leg.order}-${leg.city.inseeCode}`}>
-                            <td>{leg.order}</td>
-                            <td>{leg.city.name}</td>
-                            <td>{formatCircuitDistance(leg.distanceFromPreviousKm)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+
+                {isPlacesStep && (
+                  <>
+                    <p className="circuit-total-distance">
+                      Circuit courant: <strong>{formatCircuitDistance(circuitTotalDistanceKm)}</strong>
+                    </p>
+                    {!canLoadCircuitPlaces ? (
+                      <p className="cities-highlight">
+                        Ajoutez au moins 2 villes au circuit pour rendre cette etape pertinente.
+                      </p>
+                    ) : null}
+                    {shouldShowCircuitPlaces && isLoadingVisitPlaces && (
+                      <p className="cities-summary">
+                        Chargement des lieux a visiter autour du circuit...
+                      </p>
+                    )}
+                    {shouldShowCircuitPlaces && visitPlacesErrorMessage !== null && (
+                      <p className="cities-error">{visitPlacesErrorMessage}</p>
+                    )}
+                    {shouldShowCircuitPlaces &&
+                      !isLoadingVisitPlaces &&
+                      visitPlacesErrorMessage === null &&
+                      circuitPlaces.length === 0 && (
+                        <p className="cities-summary">
+                          Aucun lieu a visiter n'a ete trouve a proximite de ce circuit.
+                        </p>
+                      )}
+                    {shouldShowCircuitPlaces &&
+                      !isLoadingVisitPlaces &&
+                      visitPlacesErrorMessage === null &&
+                      circuitPlaces.length > 0 && (
+                        <>
+                          <div className="places-summary-card">
+                            <p className="places-summary-kicker">Lecture de carte</p>
+                            <p className="places-summary-title">
+                              {formatCountLabel(circuitPlaces.length, "lieu")} trouve
+                              {circuitPlaces.length > 1 ? "s" : ""}
+                            </p>
+                            <p className="places-summary-body">
+                              {visibleVisitPlacesOnMapCount} visible
+                              {visibleVisitPlacesOnMapCount > 1 ? "s" : ""} sur la carte.
+                              La carte garde un sous-ensemble lisible selon le zoom pour
+                              laisser le circuit prioritaire.
+                            </p>
+                          </div>
+                          <div className="places-list">
+                            {circuitPlaces.map((place) => (
+                              <article
+                                key={`${place.source}-${place.sourceId}`}
+                                className="place-card"
+                              >
+                                <div className="place-card-header">
+                                  <div>
+                                    <h3 className="place-card-title">{place.name}</h3>
+                                    <p className="place-card-meta">
+                                      {place.category}
+                                      {place.commune !== null ? ` - ${place.commune}` : ""}
+                                    </p>
+                                  </div>
+                                  <span className="place-card-distance">
+                                    {formatPlaceDistance(place.distanceToCircuitMeters)}
+                                  </span>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    <p className="circuit-total-distance">
+                      Total: <strong>{formatCircuitDistance(circuitTotalDistanceKm)}</strong>
+                    </p>
+                    {circuitLegs.length > 0 && (
+                      <div className="circuit-table-wrap">
+                        <table className="circuit-table">
+                          <thead>
+                            <tr>
+                              <th>Etape</th>
+                              <th>Ville</th>
+                              <th>Depuis la precedente</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {circuitLegs.map((leg) => (
+                              <tr key={`${leg.order}-${leg.city.inseeCode}`}>
+                                <td>{leg.order}</td>
+                                <td>{leg.city.name}</td>
+                                <td>{formatCircuitDistance(leg.distanceFromPreviousKm)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
             )}
@@ -483,8 +581,8 @@ export function App() {
               onClick={handleNextStep}
               disabled={
                 (isSelectionStep && !canOpenCircuitStep) ||
-                (isCircuitStep && !canOpenSummaryStep) ||
-                isSummaryStep
+                (isCircuitStep && !canOpenPlacesStep) ||
+                isPlacesStep
               }
             >
               <span>{primaryStepActionLabel}</span>
@@ -498,9 +596,8 @@ export function App() {
                   type="button"
                   className="sidebar-footer-link"
                   onClick={handlePreviousStep}
-                  disabled={isSelectionStep}
                 >
-                  Étape précédente
+                  Etape precedente
                 </button>
               </div>
             )}
@@ -520,9 +617,14 @@ export function App() {
             selectedRegionCodes={selectedRegionCodes}
             cities={cities}
             circuitCities={circuitCities}
+            visitPlaces={shouldShowCircuitPlaces ? circuitPlaces : []}
+            isLoadingVisitPlaces={isLoadingVisitPlaces}
+            visitPlacesErrorMessage={visitPlacesErrorMessage}
+            isCircuitPlacesEnabled={shouldShowCircuitPlaces}
             isLoadingCities={isLoadingCities}
             cityErrorMessage={cityErrorMessage}
             onVisibleCitiesChange={setVisibleCitiesOnMapCount}
+            onVisibleVisitPlacesChange={setVisibleVisitPlacesOnMapCount}
             onToggleDepartment={handleToggleDepartment}
             onRadiusChange={handleRadiusChange}
             onToggleRegion={handleToggleRegion}
@@ -537,6 +639,12 @@ export function App() {
 
 function formatCircuitDistance(distanceKm: number) {
   return `${distanceKm.toFixed(1).replace(".", ",")} km`;
+}
+
+function formatPlaceDistance(distanceMeters: number) {
+  return distanceMeters >= 1000
+    ? `${(distanceMeters / 1000).toFixed(1).replace(".", ",")} km`
+    : `${Math.round(distanceMeters)} m`;
 }
 
 function formatCountLabel(count: number, singularNoun: string) {

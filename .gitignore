@@ -20,3 +20,7 @@ backend/dist/
 tmp_*.csv
 tmp_*.json
 tmp_*.txt
+
+# Large local datasets generated or downloaded for visit places
+backend/data/places/raw/datatourisme-tourist-sites.jsonld
+backend/data/places/normalized/visit-places.normalized.json

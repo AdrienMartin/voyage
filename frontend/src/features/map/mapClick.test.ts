@@ -101,10 +101,10 @@ describe("resolveMapClickAction", () => {
     });
   });
 
-  it("does nothing in summary step", () => {
+  it("does nothing in places step", () => {
     expect(
       resolveMapClickAction({
-        workflowStep: "summary",
+        workflowStep: "places",
         selectionMode: "zone",
         clickedPoint,
         clickedCity,

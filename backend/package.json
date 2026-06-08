@@ -8,10 +8,13 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run src/lib/communes.test.ts src/features/cities/cityService.test.ts src/features/cities/cityRoutes.test.ts",
+    "test": "vitest run src/lib/communes.test.ts src/lib/placeSourceCatalog.test.ts src/lib/visitPlaceRanking.test.ts src/lib/visitPlaces.test.ts src/features/cities/cityService.test.ts src/features/cities/cityRoutes.test.ts src/features/places/placeService.test.ts src/features/places/placeRoutes.test.ts",
     "db:migrate": "tsx src/scripts/runMigrations.ts",
     "data:fetch-communes": "tsx src/scripts/fetchCommuneSources.ts",
+    "data:fetch-visit-places": "tsx src/scripts/fetchVisitPlaceSources.ts",
     "data:import-communes": "tsx src/scripts/importCommunes.ts",
+    "data:import-visit-places": "tsx src/scripts/importVisitPlaces.ts",
+    "data:normalize-visit-places": "tsx src/scripts/normalizeVisitPlaces.ts",
     "data:refresh-communes": "npm run data:fetch-communes && npm run data:import-communes"
   },
   "dependencies": {

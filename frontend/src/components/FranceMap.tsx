@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import type {
   Feature,
   GeoJsonProperties,
@@ -22,13 +29,19 @@ import {
   projectCircuitCities,
 } from "../features/circuit/circuitOverlay";
 import { resolveMapClickAction } from "../features/map/mapClick";
+import {
+  getCircuitViewportBounds,
+  getCircuitViewportFitKey,
+} from "../features/map/mapViewport";
 import { selectDisplayedCities, type MapBounds } from "../features/cities/cityDisplay";
+import { selectDisplayedVisitPlaces } from "../features/places/placeDisplay";
 import { projectAdministrativeAreas } from "../features/areas/administrativeOverlay";
 import { findAdministrativeAreaAtPoint } from "../features/areas/administrativeGeometry";
 import type { AdministrativeAreaFeatureProperties } from "../features/areas/useAdministrativeAreas";
 import { AdministrativeAreasOverlay } from "./AdministrativeAreasOverlay";
 import type { City } from "../types/cities";
 import type { SelectedPoint } from "../types/geo";
+import type { VisitPlace } from "../types/places";
 import type { SelectionMode, WorkflowStep } from "../types/selection";
 
 const FRANCE_CENTER: [number, number] = [2.2137, 46.2276];
@@ -45,6 +58,8 @@ const CITIES_SOURCE_ID = "cities";
 const CITY_LABELS_SOURCE_ID = "city-labels";
 const CITIES_CIRCLE_LAYER_ID = "cities-circle";
 const CITIES_LABEL_LAYER_ID = "cities-label";
+const VISIT_PLACES_SOURCE_ID = "visit-places";
+const VISIT_PLACES_LAYER_ID = "visit-places-circle";
 const REGIONS_SOURCE_ID = "regions";
 const REGIONS_SELECTED_SOURCE_ID = "regions-selected";
 const REGIONS_FILL_LAYER_ID = "regions-fill";
@@ -79,14 +94,24 @@ type FranceMapProps = {
   selectedRegionCodes: string[];
   cities: City[];
   circuitCities: CircuitCity[];
+  visitPlaces: VisitPlace[];
+  isLoadingVisitPlaces: boolean;
+  visitPlacesErrorMessage: string | null;
+  isCircuitPlacesEnabled: boolean;
   isLoadingCities: boolean;
   cityErrorMessage: string | null;
   onVisibleCitiesChange: (count: number) => void;
+  onVisibleVisitPlacesChange: (count: number) => void;
   onToggleDepartment: (code: string) => void;
   onRadiusChange: (radiusInMeters: number) => void;
   onToggleRegion: (code: string) => void;
   onToggleCircuitCity: (city: City | CircuitCity) => void;
   onSelectPoint: (point: SelectedPoint) => void;
+};
+
+type ProjectedVisitPlace = VisitPlace & {
+  x: number;
+  y: number;
 };
 
 export function FranceMap({
@@ -102,9 +127,14 @@ export function FranceMap({
   selectedRegionCodes,
   cities,
   circuitCities,
+  visitPlaces,
+  isLoadingVisitPlaces,
+  visitPlacesErrorMessage,
+  isCircuitPlacesEnabled,
   isLoadingCities,
   cityErrorMessage,
   onVisibleCitiesChange,
+  onVisibleVisitPlacesChange,
   onToggleDepartment,
   onRadiusChange,
   onToggleRegion,
@@ -121,6 +151,7 @@ export function FranceMap({
   const radiusInMetersRef = useRef(radiusInMeters);
   const workflowStepRef = useRef(workflowStep);
   const selectionModeRef = useRef(selectionMode);
+  const lastCenteredCircuitKeyRef = useRef<string | null>(null);
   const viewportAnimationFrameRef = useRef<number | null>(null);
   const citiesRef = useRef<City[]>(cities);
   const departmentsRef = useRef(departments);
@@ -140,11 +171,13 @@ export function FranceMap({
   const [isMapReady, setIsMapReady] = useState(false);
   const [currentZoom, setCurrentZoom] = useState(4.8);
   const [currentBounds, setCurrentBounds] = useState<MapBounds | null>(null);
+  const [viewportRevision, setViewportRevision] = useState(0);
   const [hoveredCityName, setHoveredCityName] = useState<string | null>(null);
   const [hoveredAreaName, setHoveredAreaName] = useState<string | null>(null);
   const isSelectionStep = workflowStep === "selection";
   const isCircuitStep = workflowStep === "circuit";
-  const isSummaryStep = workflowStep === "summary";
+  const isPlacesStep = workflowStep === "places";
+  const isSummaryStep = false;
   const isZoneMode = selectionMode === "zone";
   const hasAdministrativeSelection =
     selectedDepartmentCodes.length > 0 || selectedRegionCodes.length > 0;
@@ -211,12 +244,18 @@ export function FranceMap({
           minZoom: 4,
           maxZoom: 12,
           maxBounds: FRANCE_BOUNDS,
+          renderWorldCopies: false,
         });
         map.getCanvas().style.cursor = "crosshair";
 
         const handleLoad = () => {
           hideBasemapLabels(map);
-          syncViewportState(map, setCurrentZoom, setCurrentBounds);
+          syncViewportState(
+            map,
+            setCurrentZoom,
+            setCurrentBounds,
+            setViewportRevision,
+          );
 
           map.addSource(CIRCLE_SOURCE_ID, {
             type: "geojson",
@@ -252,6 +291,11 @@ export function FranceMap({
           map.addSource(CITY_LABELS_SOURCE_ID, {
             type: "geojson",
             data: emptyCitiesFeatureCollection(),
+          });
+
+          map.addSource(VISIT_PLACES_SOURCE_ID, {
+            type: "geojson",
+            data: emptyVisitPlacesFeatureCollection(),
           });
 
           map.addSource(REGIONS_SOURCE_ID, {
@@ -317,6 +361,31 @@ export function FranceMap({
               "text-color": "#10233d",
               "text-halo-color": "#ffffff",
               "text-halo-width": 1.4,
+            },
+          });
+
+          map.addLayer({
+            id: VISIT_PLACES_LAYER_ID,
+            type: "circle",
+            source: VISIT_PLACES_SOURCE_ID,
+            paint: {
+              "circle-color": "#f4b266",
+              "circle-radius": [
+                "interpolate",
+                ["linear"],
+                ["get", "rankingScore"],
+                0,
+                3,
+                30,
+                4,
+                50,
+                5,
+                70,
+                6,
+              ],
+              "circle-stroke-color": "#6a3a07",
+              "circle-stroke-width": 1.2,
+              "circle-opacity": 0.82,
             },
           });
 
@@ -512,12 +581,18 @@ export function FranceMap({
 
           viewportAnimationFrameRef.current = window.requestAnimationFrame(() => {
             viewportAnimationFrameRef.current = null;
-            syncViewportState(map, setCurrentZoom, setCurrentBounds);
+            syncViewportState(
+              map,
+              setCurrentZoom,
+              setCurrentBounds,
+              setViewportRevision,
+            );
           });
         };
 
         map.on("zoom", syncViewportStateOnFrame);
         map.on("move", syncViewportStateOnFrame);
+        map.on("resize", syncViewportStateOnFrame);
         map.on("mousemove", (event) => {
           const activeSelectionMode = selectionModeRef.current;
           const isSelectionInteractionStep = workflowStepRef.current === "selection";
@@ -870,10 +945,29 @@ export function FranceMap({
     () => selectDisplayedCities(cities, currentBounds, currentZoom),
     [cities, currentBounds, currentZoom],
   );
+  const displayedCitiesOnMap = useMemo(
+    () => (isPlacesStep ? [] : displayedCities),
+    [displayedCities, isPlacesStep],
+  );
+  const displayedVisitPlaces = useMemo(
+    () => selectDisplayedVisitPlaces(visitPlaces, currentBounds, currentZoom),
+    [visitPlaces, currentBounds, currentZoom],
+  );
 
   useEffect(() => {
-    onVisibleCitiesChange(displayedCities.length);
-  }, [displayedCities.length, onVisibleCitiesChange]);
+    onVisibleCitiesChange(displayedCitiesOnMap.length);
+  }, [displayedCitiesOnMap.length, onVisibleCitiesChange]);
+
+  useEffect(() => {
+    onVisibleVisitPlacesChange(
+      isPlacesStep && isCircuitPlacesEnabled ? displayedVisitPlaces.length : 0,
+    );
+  }, [
+    displayedVisitPlaces.length,
+    isCircuitPlacesEnabled,
+    isPlacesStep,
+    onVisibleVisitPlacesChange,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -889,9 +983,34 @@ export function FranceMap({
       return;
     }
 
-    source.setData(createCitiesFeatureCollection(displayedCities));
-    labelSource.setData(createCitiesFeatureCollection(displayedCities));
-  }, [displayedCities, isMapReady]);
+    source.setData(createCitiesFeatureCollection(displayedCitiesOnMap));
+    labelSource.setData(createCitiesFeatureCollection(displayedCitiesOnMap));
+  }, [displayedCitiesOnMap, isMapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!isMapReady || map === null || !map.isStyleLoaded()) {
+      return;
+    }
+
+    const source = map.getSource(VISIT_PLACES_SOURCE_ID) as
+      | GeoJSONSource
+      | undefined;
+    if (source === undefined) {
+      return;
+    }
+
+    source.setData(
+      isPlacesStep && isCircuitPlacesEnabled
+        ? createVisitPlacesFeatureCollection(displayedVisitPlaces)
+        : emptyVisitPlacesFeatureCollection(),
+    );
+  }, [
+    displayedVisitPlaces,
+    isCircuitPlacesEnabled,
+    isMapReady,
+    isPlacesStep,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -942,7 +1061,7 @@ export function FranceMap({
 
   const projectedCircuitCities = useMemo(
     () => projectCircuitCities(mapRef.current, circuitCities),
-    [circuitCities, currentBounds, currentZoom],
+    [circuitCities, currentBounds, currentZoom, viewportRevision],
   );
   const projectedCircuitStops = useMemo(
     () => groupProjectedCircuitStops(projectedCircuitCities),
@@ -958,8 +1077,8 @@ export function FranceMap({
     [projectedCircuitCities],
   );
   const displayedCityInseeCodes = useMemo(
-    () => new Set(displayedCities.map((displayedCity) => displayedCity.inseeCode)),
-    [displayedCities],
+    () => new Set(displayedCitiesOnMap.map((displayedCity) => displayedCity.inseeCode)),
+    [displayedCitiesOnMap],
   );
   const projectedAdministrativeAreas = useMemo(
     () =>
@@ -971,8 +1090,155 @@ export function FranceMap({
             ? departments
             : null,
       ),
-    [currentBounds, currentZoom, departments, regions, selectionMode],
+    [currentBounds, currentZoom, departments, regions, selectionMode, viewportRevision],
   );
+  const projectedVisitPlaces = useMemo(
+    () =>
+      projectVisitPlaces(
+        mapRef.current,
+        isPlacesStep && isCircuitPlacesEnabled ? displayedVisitPlaces : [],
+      ),
+    [
+      currentBounds,
+      currentZoom,
+      displayedVisitPlaces,
+      isCircuitPlacesEnabled,
+      isPlacesStep,
+      viewportRevision,
+    ],
+  );
+  const placesViewportVersion = useMemo(() => {
+    if (!isPlacesStep || !isCircuitPlacesEnabled) {
+      return null;
+    }
+
+    if (isLoadingVisitPlaces) {
+      return "loading";
+    }
+
+    if (visitPlacesErrorMessage !== null) {
+      return `error:${visitPlacesErrorMessage}`;
+    }
+
+    return `ready:${visitPlaces.length}`;
+  }, [
+    isCircuitPlacesEnabled,
+    isLoadingVisitPlaces,
+    isPlacesStep,
+    visitPlaces.length,
+    visitPlacesErrorMessage,
+  ]);
+  const circuitViewportKey = useMemo(
+    () =>
+      getCircuitViewportFitKey({
+        circuitCities,
+        isPlacesStep,
+        isCircuitPlacesEnabled,
+        placesViewportVersion,
+      }),
+    [circuitCities, isCircuitPlacesEnabled, isPlacesStep, placesViewportVersion],
+  );
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!isMapReady || map === null) {
+      return;
+    }
+
+    map.resize();
+    syncViewportState(
+      map,
+      setCurrentZoom,
+      setCurrentBounds,
+      setViewportRevision,
+    );
+    const animationFrameId = window.requestAnimationFrame(() => {
+      map.resize();
+      syncViewportState(
+        map,
+        setCurrentZoom,
+        setCurrentBounds,
+        setViewportRevision,
+      );
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [
+    isMapReady,
+    workflowStep,
+    isCircuitPlacesEnabled,
+    isLoadingVisitPlaces,
+    visitPlaces.length,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const container = containerRef.current;
+    if (!isMapReady || map === null || container === null) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(() => {
+        map.resize();
+        syncViewportState(
+          map,
+          setCurrentZoom,
+          setCurrentBounds,
+          setViewportRevision,
+        );
+      });
+    });
+
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [isMapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!isMapReady || map === null) {
+      return;
+    }
+
+    if (circuitViewportKey === null) {
+      lastCenteredCircuitKeyRef.current = null;
+      return;
+    }
+
+    if (lastCenteredCircuitKeyRef.current === circuitViewportKey) {
+      return;
+    }
+
+    const bounds = getCircuitViewportBounds(circuitCities);
+    if (bounds === null) {
+      return;
+    }
+
+    lastCenteredCircuitKeyRef.current = circuitViewportKey;
+    map.resize();
+    map.fitBounds(bounds, {
+      padding: {
+        top: 96,
+        right: 72,
+        bottom: 72,
+        left: 72,
+      },
+      duration: 0,
+      maxZoom: 8.5,
+    });
+    syncViewportState(
+      map,
+      setCurrentZoom,
+      setCurrentBounds,
+      setViewportRevision,
+    );
+  }, [circuitCities, circuitViewportKey, isMapReady]);
+
   return (
     <section className="map-panel" aria-label="Carte de France">
       <div className="map-frame">
@@ -984,6 +1250,21 @@ export function FranceMap({
           selectionMode={selectionMode}
           workflowStep={workflowStep}
         />
+        <div className="visit-places-overlay-layer">
+          {projectedVisitPlaces.map((visitPlace) => (
+            <div
+              key={`${visitPlace.source}-${visitPlace.sourceId}`}
+              className="visit-place-overlay"
+              style={{
+                left: `${visitPlace.x}px`,
+                top: `${visitPlace.y}px`,
+              }}
+            >
+              <span className="visit-place-marker" aria-hidden="true" />
+              <span className="visit-place-label">{visitPlace.name}</span>
+            </div>
+          ))}
+        </div>
         <div className="circuit-overlay-layer">
           {projectedCircuitSegments.map((segment) => (
             <div
@@ -1036,6 +1317,8 @@ export function FranceMap({
                 ? "Sélectionnez une zone pour afficher les villes"
               : isCircuitStep
                 ? "Cliquez sur les villes pour construire le circuit"
+              : isPlacesStep
+                ? "Préparez les lieux à visiter autour du circuit"
               : isSummaryStep
                 ? "Récapitulatif du circuit"
               : cityErrorMessage !== null
@@ -1139,6 +1422,13 @@ function emptyCitiesFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point
   };
 }
 
+function emptyVisitPlacesFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: "FeatureCollection",
+    features: [],
+  };
+}
+
 function emptyAdministrativeAreasFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Geometry> {
   return {
     type: "FeatureCollection",
@@ -1166,10 +1456,50 @@ function createCitiesFeatureCollection(
   };
 }
 
+function createVisitPlacesFeatureCollection(
+  visitPlaces: VisitPlace[],
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: "FeatureCollection",
+    features: visitPlaces.map((place) => ({
+      type: "Feature",
+      properties: {
+        sourceId: place.sourceId,
+        name: place.name,
+        rankingScore: place.rankingScore,
+      },
+      geometry: {
+        type: "Point",
+        coordinates: [place.longitude, place.latitude],
+      },
+    })),
+  };
+}
+
+function projectVisitPlaces(
+  map: Map | null,
+  visitPlaces: VisitPlace[],
+): ProjectedVisitPlace[] {
+  if (map === null) {
+    return [];
+  }
+
+  return visitPlaces.slice(0, 12).map((visitPlace) => {
+    const projectedPoint = map.project([visitPlace.longitude, visitPlace.latitude]);
+
+    return {
+      ...visitPlace,
+      x: projectedPoint.x,
+      y: projectedPoint.y,
+    };
+  });
+}
+
 function syncViewportState(
   map: Map,
   setZoom: (zoom: number) => void,
   setBounds: (bounds: MapBounds) => void,
+  setViewportRevision: Dispatch<SetStateAction<number>>,
 ) {
   const bounds = map.getBounds();
   setZoom(map.getZoom());
@@ -1179,6 +1509,7 @@ function syncViewportState(
     east: bounds.getEast(),
     north: bounds.getNorth(),
   });
+  setViewportRevision((currentRevision) => currentRevision + 1);
 }
 
 function getExistingLayerIds(map: Map, layerIds: string[]) {

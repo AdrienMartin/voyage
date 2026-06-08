@@ -1,5 +1,6 @@
 import type { CitySearchResponse } from "../types/cities";
 import type { SelectedPoint } from "../types/geo";
+import type { VisitPlaceSearchResponse } from "../types/places";
 
 const API_BASE_URL = "http://localhost:3000";
 const FULL_CITY_FETCH_LIMIT = "40000";
@@ -56,4 +57,31 @@ export async function fetchCitiesByAdministrativeAreas(params: {
   }
 
   return (await response.json()) as CitySearchResponse;
+}
+
+export async function fetchCircuitPlaces(params: {
+  circuitPoints: Array<{
+    latitude: number;
+    longitude: number;
+  }>;
+  proximityRadiusMeters: number;
+  signal?: AbortSignal;
+}): Promise<VisitPlaceSearchResponse> {
+  const response = await fetch(`${API_BASE_URL}/circuit/places`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      circuitPoints: params.circuitPoints,
+      proximityRadiusMeters: params.proximityRadiusMeters,
+    }),
+    signal: params.signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Circuit place search failed with status ${response.status}.`);
+  }
+
+  return (await response.json()) as VisitPlaceSearchResponse;
 }

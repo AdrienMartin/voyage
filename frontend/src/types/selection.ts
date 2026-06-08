@@ -1,5 +1,5 @@
 export type SelectionMode = "zone" | "department" | "region";
-export type WorkflowStep = "selection" | "circuit" | "summary";
+export type WorkflowStep = "selection" | "circuit" | "places";
 
 export function toggleSelectionCode(
   selectedCodes: string[],

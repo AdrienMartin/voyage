@@ -5,9 +5,15 @@ import {
   type CityRepository,
 } from "./features/cities/cityRepository.js";
 import { registerCityRoutes } from "./features/cities/cityRoutes.js";
+import {
+  createPostgresVisitPlaceRepository,
+  type VisitPlaceRepository,
+} from "./features/places/placeRepository.js";
+import { registerPlaceRoutes } from "./features/places/placeRoutes.js";
 
 type BuildAppOptions = {
   cityRepository?: CityRepository;
+  visitPlaceRepository?: VisitPlaceRepository;
 };
 
 export function buildApp(options: BuildAppOptions = {}) {
@@ -16,6 +22,8 @@ export function buildApp(options: BuildAppOptions = {}) {
   });
   const cityRepository =
     options.cityRepository ?? createPostgresCityRepository();
+  const visitPlaceRepository =
+    options.visitPlaceRepository ?? createPostgresVisitPlaceRepository();
 
   app.register(cors, {
     origin: true,
@@ -44,9 +52,11 @@ export function buildApp(options: BuildAppOptions = {}) {
   });
 
   registerCityRoutes(app, cityRepository);
+  registerPlaceRoutes(app, visitPlaceRepository);
 
   app.addHook("onClose", async () => {
     await cityRepository.close();
+    await visitPlaceRepository.close();
   });
 
   return app;
