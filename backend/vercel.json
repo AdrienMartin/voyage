@@ -1,4 +1,6 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": null,
   "rewrites": [
     {
       "source": "/(.*)",
@@ -6,4 +8,3 @@
     }
   ]
 }
-
